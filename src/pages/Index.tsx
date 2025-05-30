@@ -42,7 +42,7 @@ const Index = () => {
   ]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [autoPingEnabled, setAutoPingEnabled] = useState(false);
+  const [autoPingEnabled, setAutoPingEnabled] = useState(true); // Changed from false to true
   const [pingInterval, setPingInterval] = useState(30); // seconds
   const [staggerDelay, setStaggerDelay] = useState(2); // seconds between each device ping
   

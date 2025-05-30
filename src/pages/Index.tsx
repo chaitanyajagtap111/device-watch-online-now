@@ -1,10 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DeviceCard } from '@/components/DeviceCard';
 import { AddDeviceForm } from '@/components/AddDeviceForm';
-import { Monitor, Plus, Activity } from 'lucide-react';
+import { Monitor, Plus, Activity, Settings, Play, Pause } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 
 interface Device {
   id: string;
@@ -39,6 +41,13 @@ const Index = () => {
     },
   ]);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [autoPingEnabled, setAutoPingEnabled] = useState(false);
+  const [pingInterval, setPingInterval] = useState(30); // seconds
+  const [staggerDelay, setStaggerDelay] = useState(2); // seconds between each device ping
+  
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const currentDeviceIndex = useRef(0);
 
   // Simulate ping checking
   const checkDeviceStatus = async (device: Device): Promise<'online' | 'offline'> => {
@@ -66,10 +75,69 @@ const Index = () => {
     }
   };
 
+  // Staggered ping function to avoid network overload
+  const pingDevicesStaggered = async () => {
+    if (devices.length === 0) return;
+    
+    console.log('Starting staggered ping cycle...');
+    
+    for (let i = 0; i < devices.length; i++) {
+      const device = devices[i];
+      if (device) {
+        console.log(`Pinging device ${i + 1}/${devices.length}: ${device.name}`);
+        await pingDevice(device.id);
+        
+        // Wait between pings to reduce network load (except for the last device)
+        if (i < devices.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, staggerDelay * 1000));
+        }
+      }
+    }
+    
+    console.log('Ping cycle completed');
+  };
+
   const pingAllDevices = async () => {
     const promises = devices.map(device => pingDevice(device.id));
     await Promise.all(promises);
   };
+
+  // Auto-ping effect
+  useEffect(() => {
+    if (autoPingEnabled && devices.length > 0) {
+      console.log(`Auto-ping enabled with ${pingInterval}s interval and ${staggerDelay}s stagger delay`);
+      
+      // Start immediately
+      pingDevicesStaggered();
+      
+      // Set up interval for subsequent pings
+      intervalRef.current = setInterval(() => {
+        pingDevicesStaggered();
+      }, pingInterval * 1000);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+        console.log('Auto-ping disabled');
+      }
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [autoPingEnabled, pingInterval, staggerDelay, devices.length]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
 
   const addDevice = (name: string, ipAddress: string) => {
     const newDevice: Device = {
@@ -105,6 +173,31 @@ const Index = () => {
           <p className="text-lg text-gray-600">Monitor your network devices in real-time</p>
         </div>
 
+        {/* Auto-ping Status */}
+        <div className="flex justify-center mb-6">
+          <Card className="bg-white/80 backdrop-blur border-0 shadow-lg">
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  {autoPingEnabled ? (
+                    <Play className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Pause className="h-4 w-4 text-gray-600" />
+                  )}
+                  <span className={`font-medium ${autoPingEnabled ? 'text-green-600' : 'text-gray-600'}`}>
+                    Auto-ping: {autoPingEnabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
+                {autoPingEnabled && (
+                  <span className="text-sm text-gray-500">
+                    Every {pingInterval}s (staggered by {staggerDelay}s)
+                  </span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card className="bg-white/80 backdrop-blur border-0 shadow-lg">
@@ -138,11 +231,42 @@ const Index = () => {
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-4 mb-8 justify-center">
           <Button 
+            onClick={() => setAutoPingEnabled(!autoPingEnabled)}
+            className={`px-6 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 shadow-lg ${
+              autoPingEnabled 
+                ? 'bg-red-600 hover:bg-red-700 text-white' 
+                : 'bg-green-600 hover:bg-green-700 text-white'
+            }`}
+          >
+            {autoPingEnabled ? (
+              <>
+                <Pause className="h-4 w-4 mr-2" />
+                Stop Auto-ping
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4 mr-2" />
+                Start Auto-ping
+              </>
+            )}
+          </Button>
+          
+          <Button 
             onClick={pingAllDevices}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 shadow-lg"
+            disabled={autoPingEnabled}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 shadow-lg disabled:opacity-50"
           >
             <Activity className="h-4 w-4 mr-2" />
-            Ping All Devices
+            Ping All Now
+          </Button>
+          
+          <Button 
+            onClick={() => setShowSettings(!showSettings)}
+            variant="outline"
+            className="px-6 py-2 rounded-lg transition-all duration-200 transform hover:scale-105 shadow-lg"
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            Settings
           </Button>
           
           <Button 
@@ -153,6 +277,62 @@ const Index = () => {
             Add Device
           </Button>
         </div>
+
+        {/* Settings Panel */}
+        {showSettings && (
+          <div className="mb-8">
+            <Card className="bg-white/90 backdrop-blur border-0 shadow-lg max-w-md mx-auto">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
+                  <Settings className="h-5 w-5 mr-2 text-blue-600" />
+                  Auto-ping Settings
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="pingInterval" className="text-sm font-medium text-gray-700">
+                    Ping Interval (seconds)
+                  </Label>
+                  <Select value={pingInterval.toString()} onValueChange={(value) => setPingInterval(Number(value))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="15">15 seconds</SelectItem>
+                      <SelectItem value="30">30 seconds</SelectItem>
+                      <SelectItem value="60">1 minute</SelectItem>
+                      <SelectItem value="120">2 minutes</SelectItem>
+                      <SelectItem value="300">5 minutes</SelectItem>
+                      <SelectItem value="600">10 minutes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="staggerDelay" className="text-sm font-medium text-gray-700">
+                    Stagger Delay (seconds)
+                  </Label>
+                  <Select value={staggerDelay.toString()} onValueChange={(value) => setStaggerDelay(Number(value))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 second</SelectItem>
+                      <SelectItem value="2">2 seconds</SelectItem>
+                      <SelectItem value="3">3 seconds</SelectItem>
+                      <SelectItem value="5">5 seconds</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="pt-4 text-sm text-gray-600">
+                  <p><strong>Ping Interval:</strong> How often to check all devices</p>
+                  <p><strong>Stagger Delay:</strong> Delay between each device ping to reduce network load</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Add Device Form */}
         {showAddForm && (
